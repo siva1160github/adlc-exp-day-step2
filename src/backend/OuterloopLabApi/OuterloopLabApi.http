@@ -1,0 +1,6 @@
+@OuterloopLabApi_HostAddress = http://localhost:5287
+
+GET {{OuterloopLabApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
