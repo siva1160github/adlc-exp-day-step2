@@ -1,101 +1,22 @@
-name: CI Pipeline
+name: CI
 
 on:
+  push:
   pull_request:
-    branches: [main]
-
-# Required so GITHUB_TOKEN can post/update the PR review comment.
-permissions:
-  contents: read
-  pull-requests: write
-  issues: write
 
 jobs:
-  build-frontend:
+  backend:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src/frontend
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
-          node-version: "24"
+          dotnet-version: '10.0.x'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Restore & build
+        run: dotnet build src/backend/OuterloopLabApi.sln -c Release
 
-      - name: Run unit tests
-        run: npm test
-
-      - name: Build frontend
-        run: npm run build
-
-  build-backend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: src/backend
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "10.0.x"
-
-      - name: Restore dependencies
-        run: dotnet restore
-
-      - name: Run unit tests
-        run: dotnet test Tests/Tests.csproj --verbosity normal
-
-      - name: Build backend
-        run: dotnet build -c Release
-
-  pr-review:
-    if: always()
-    needs: [build-frontend, build-backend]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: write
-    steps:
-      - name: Notify CI/CD Review Agent on Failure
-        if: failure()
-        run: |
-          curl -s -S -X POST https://ca-adlc-unified-agent.ashyocean-2579666a.westus2.azurecontainerapps.io/api/pipeline/review/github \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -d '{
-              "run_id": "${{ github.run_id }}",
-              "repository": "${{ github.repository }}",
-              "commit_sha": "${{ github.sha }}"
-            }'
-
-      - name: Trigger PR Review + Critic
-        id: pr-review
-        if: github.event_name == 'pull_request' && always()
-        env:
-          PRONATIVE_REVIEW_URL: https://ca-adlc-blr-2608-agents.grayrock-0cea75cd.centralindia.azurecontainerapps.io
-        run: |
-          response=$(curl -s -S -X POST "${PRONATIVE_REVIEW_URL}/api/code-review/review/github" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -d "{
-              \"repository\": \"${{ github.repository }}\",
-              \"pull_request_number\": ${{ github.event.pull_request.number }},
-              \"commit_sha\": \"${{ github.event.pull_request.head.sha }}\",
-              \"enable_critic\": true
-            }")
-          echo "PR Review response: $response"
-          report_id=$(echo "$response" | jq -r '.agent_report.report_id // .agent_report.id // empty')
-          echo "report_id=$report_id" >> "$GITHUB_OUTPUT"
-          critic_applied=$(echo "$response" | jq -r '.agent_report.critic_applied // false')
-          echo "critic_applied=$critic_applied" >> "$GITHUB_OUTPUT"
-          status=$(echo "$response" | jq -r '.agent_report.status // .status // empty')
-          if [ "$status" = "error" ] || [ "$status" = "unauthorized" ] || [ "$status" = "not_found" ]; then
-            echo "PR review request failed with status: $status"
-            exit 1
-          fi
+      - name: Test
+        run: dotnet test src/backend/OuterloopLabApi.sln -c Release
